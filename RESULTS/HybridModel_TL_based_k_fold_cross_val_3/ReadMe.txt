@@ -1,0 +1,1 @@
+Removed last 2 layers. Only two layer remains after Flatten().
