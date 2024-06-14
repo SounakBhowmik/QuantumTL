@@ -377,6 +377,19 @@ class DressedQuantumNet(nn.Module):
         x = torch.relu(self.qlayer(x))
         x = torch.log_softmax(self.post_net(x), dim=1)
         return x
+    
+    
+class DressedClassicalNet(nn.Module):
+    def __init__(self, input_shape):
+        super().__init__()
+        # The output from the penultimate layer of the classical models has 16 dimensions
+        self.fc1 = nn.Linear(input_shape, 4)
+        self.fc2 = nn.Linear(4, 2)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.log_softmax(self.fc2(x), dim=1)
+        return x
 #%%
 '''
 import time

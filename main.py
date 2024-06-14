@@ -17,10 +17,10 @@ from tqdm import tqdm
 import pennylane as qml
 #%%
 # Define data paths
-resizedImage_folder = 'ReIMAGES'
-resizedNoDefectImage_folder = 'ReNO_DEFECT'
-q_feature_file_path = 'Q_Feature_Maps/ALL_Q_featureMap_4x32x32.pt'
-q_feature_labels_file_path = 'Q_Feature_Maps/ALL_Q_featureMap_4x32x32_labels.pt'
+resizedImage_folder = '../Datasets/NEU_DET/ReIMAGES'
+resizedNoDefectImage_folder = '../Datasets/NEU_DET/ReNO_DEFECT'
+#q_feature_file_path = 'Q_Feature_Maps/ALL_Q_featureMap_4x32x32.pt'
+#q_feature_labels_file_path = 'Q_Feature_Maps/ALL_Q_featureMap_4x32x32_labels.pt'
 
 input_dim = (200, 200)
 # Test accuracy function
@@ -206,34 +206,20 @@ saveResults(results_dict, results_file_path)
 
 
 #%% TL-based models
-from Models import Q_linear, DressedQuantumNet
+from Models import Q_linear, DressedQuantumNet, DressedClassicalNet
 
 cm_1 = torch.load('classical models/ClassicalModel1_1683709579050736241.pt', map_location=torch.device('cpu'))
 cm_2 = torch.load('classical models/ClassicalModel2_11926550140455977890.pt', map_location=torch.device('cpu'))
 cm_3 = torch.load('classical models/ClassicalModel3_6849243949351946134.pt', map_location=torch.device('cpu'))
 cm_4 = torch.load('classical models/ClassicalModel4_4305358886776407372.pt', map_location=torch.device('cpu'))
 
-hm_1 = cm_1
-for param in hm_1.parameters():
-    param.requires_grad = False
 
 class Flatten(torch.nn.Module):
     def forward(self, x):
         batch_size = x.shape[0]
         return x.view(batch_size, -1)
+#%%
 #--------------------------------------------------------------------------------------------------------
-#Model 1
-hm_1 = nn.Sequential(hm_1.conv1,
-                     nn.ReLU(),
-                     hm_1.maxpool1,
-                     hm_1.conv2,
-                     nn.ReLU(),
-                     hm_1.maxpool2,
-                     hm_1.conv3,
-                     nn.ReLU(),
-                     Flatten())
-
-dqn1= DressedQuantumNet(128 * 4 * 4)
 
 import pickle
 def saveResults(results, file_path):
@@ -246,82 +232,91 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import KFold
 from sklearn.metrics import precision_score, recall_score, f1_score
 
-# Best classical model
-#classical_model_path = classicalModel1_trained_path
 
-# Model to test
-#best_hybrid_model = hybridModel
-criterion = torch.nn.CrossEntropyLoss()  # For classification tasks, adjust accordingly
-num_epochs = 50
 
-# Convert your features and labels to PyTorch tensors
-# X is X
+def k_fold_cross_val(X, y, model_number, num_epochs = 50, n_splits = 6):
+    criterion = torch.nn.CrossEntropyLoss()  # For classification tasks, adjust accordingly
+    num_epochs = 50
+    
+    kf = KFold(n_splits = n_splits, shuffle=True, random_state=42)
+    results_dict = {}
+    models = {}
+    
+    # Define a device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
+        print(f"Fold {fold+1}")
+    
+        # Instantiating the hybrid model
+        #model = build_hybrid_model(classical_model_path, DressedQuantumNet, device)
+        #model = build_hybrid_model(cm_1, 1, 16)
+        model = DressedClassicalNet(X.shape[-1])
+        model_name = f"ClassicalModel{model_number}_transferLearning_based_{fold+1}"
+        models[model_name] = None
+        results_dict[model_name] = {"train_loss": [], "test_acc": [], "test_loss":[], "precision": [], "recall": [], "F1_score": []}
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    
+        # Split the data into training and validation sets for this fold
+        X_train, X_val = X[train_idx].clone().detach(), X[val_idx].clone().detach()
+        y_train, y_val = y[train_idx], torch.tensor(y[val_idx], dtype=torch.float32)
+        y_train = torch.tensor(np.array(np.eye(2)[y_train.astype(int)]), dtype=torch.float32)
+    
+    
+        # Convert to PyTorch DataLoader
+        train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
+        val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
+    
+        # Training loop for this fold
+        for epoch in tqdm(range(num_epochs)):  # num_epochs is a variable you should define
+            total_loss = 0
+            avg_loss = 0
+            for batch_idx, (feature, label) in enumerate(train_loader):
+                feature, label = feature.to(device), label.to(device)
+                optimizer.zero_grad()
+                output = model(feature)
+                loss = criterion(output, label)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+            avg_loss = total_loss / len(train_loader.dataset)
+            results_dict[model_name]["train_loss"].append(avg_loss)
+            test_accuracy, precision, recall, f1, test_loss = test_acc_loss(model, val_loader, criterion, device)
+            results_dict[model_name]["test_acc"].append(test_accuracy)
+            results_dict[model_name]["test_loss"].append(test_loss)
+            results_dict[model_name]["precision"].append(precision)
+            results_dict[model_name]["recall"].append(recall)
+            results_dict[model_name]["F1_score"].append(f1)
+            print(f"Epoch: {epoch} of {fold} fold, test_loss: {test_loss}, test_accuracy: {test_accuracy}")
+            
+        models[model_name] = model
+    
+    # Save the results_dict
+    results_file_path = f"RESULTS/ClassicalModel_TL_based_k_fold_cross_val/classicalModel{model_number}_transfer_learning_k-fold_cross_val_results_dictionary.pkl"
+    saveResults(results_dict, results_file_path)
+
+#%%
+#Model 1 (M-2 as per the paper)
+hm_1 = cm_1
+for param in hm_1.parameters():
+    param.requires_grad = False
+
+hm_1 = nn.Sequential(hm_1.conv1,
+                     nn.ReLU(),
+                     hm_1.maxpool1,
+                     hm_1.conv2,
+                     nn.ReLU(),
+                     hm_1.maxpool2,
+                     hm_1.conv3,
+                     nn.ReLU(),
+                     Flatten())
 X1 = hm_1(torch.tensor(X, dtype=torch.float32))
 y = Y_bin
-
-kf = KFold(n_splits=6, shuffle=True, random_state=42)
-results_dict = {}
-models = {}
-
-# Define a device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
-    print(f"Fold {fold+1}")
-
-    # Instantiating the hybrid model
-    #model = build_hybrid_model(classical_model_path, DressedQuantumNet, device)
-    #model = build_hybrid_model(cm_1, 1, 16)
-    model = DressedQuantumNet(128 * 4 * 4)
-    model_name = f"HybridModel1_transferLearning_based_{fold+1}"
-    models[model_name] = None
-    results_dict[model_name] = {"loss": [], "test_acc": [], "test_loss":[], "precision": 0, "recall": 0, "F1_score": 0}
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-    # Split the data into training and validation sets for this fold
-    X_train, X_val = X1[train_idx].clone().detach(), X1[val_idx].clone().detach()
-    y_train, y_val = y[train_idx], torch.tensor(y[val_idx], dtype=torch.float32)
-    y_train = torch.tensor(np.array(np.eye(2)[y_train.astype(int)]), dtype=torch.float32)
-
-
-    # Convert to PyTorch DataLoader
-    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
-    val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
-
-    # Training loop for this fold
-    for epoch in tqdm(range(num_epochs)):  # num_epochs is a variable you should define
-        total_loss = 0
-        avg_loss = 0
-        for batch_idx, (feature, label) in enumerate(train_loader):
-            feature, label = feature.to(device), label.to(device)
-            optimizer.zero_grad()
-            output = model(feature)
-            loss = criterion(output, label)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        avg_loss = total_loss / len(train_loader.dataset)
-        results_dict[model_name]["loss"].append(avg_loss)
-        test_accuracy, test_loss = test_acc_loss(model, val_loader, criterion, device)
-        results_dict[model_name]["test_acc"].append(test_accuracy)
-        results_dict[model_name]["test_loss"].append(test_loss)
-    # Training done
-    # Calculate the precision, recall and f1 score of this model
-    true_labels = y_val.numpy()
-    predictions = model(X_val)
-    predicted_labels = np.argmax(predictions.detach().cpu().numpy(), axis = 1)
-    results_dict[model_name]["precision"] = precision_score(true_labels, predicted_labels, average='macro')  # Use 'micro', 'macro', 'weighted', or 'samples' for multi-class
-    results_dict[model_name]["recall"] = recall_score(true_labels, predicted_labels, average='macro')
-    results_dict[model_name]["F1_score"] = f1_score(true_labels, predicted_labels, average='macro')
-    #torch.save(model, f"RESULTS/HybridModels_k_fold_cross_val/{model_name}.pt")
-    models[model_name] = model
-
-# Save the results_dict
-results_file_path = 'RESULTS/HybridModel_TL_based_k_fold_cross_val_2/hybridModel1_transfer_learning_k-fold_cross_val_results_dictionary.pkl'
-saveResults(results_dict, results_file_path)
+k_fold_cross_val(X1, y, model_number=1, num_epochs = 50, n_splits = 6)
+#%%
 #----------------------------------------------------------------------------------------------------
-# Model 2
+# Model 2 (Model-3 according to the paper)
 
 hm_2 = cm_2
 for param in hm_2.parameters():
@@ -338,76 +333,11 @@ hm_2 = nn.Sequential(hm_2.conv1,
                      hm_2.maxpool3,
                      Flatten())
 
-dqn2 = DressedQuantumNet(128 *8 *8)
-
-
-criterion = torch.nn.CrossEntropyLoss()  # For classification tasks, adjust accordingly
-num_epochs = 50
-
-# Convert your features and labels to PyTorch tensors
 X2 = hm_2(torch.tensor(X, dtype=torch.float32))
 y = Y_bin
-kf = KFold(n_splits=6, shuffle=True, random_state=42)
-results_dict = {}
-models = {}
+k_fold_cross_val(X2, y, model_number=2, num_epochs = 50, n_splits = 6)
 
-# Define a device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X2)):
-    print(f"Fold {fold+1}")
-
-    # Instantiating the hybrid model
-    #model = build_hybrid_model(classical_model_path, DressedQuantumNet, device)
-    model = DressedQuantumNet(128 *8 *8)
-    model_name = f"HybridModel2_transferLearning_based_{fold+1}"
-    models[model_name] = None
-    results_dict[model_name] = {"loss": [], "test_acc": [], "test_loss":[], "precision": 0, "recall": 0, "F1_score": 0}
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-    # Split the data into training and validation sets for this fold
-    X_train, X_val = X2[train_idx].clone().detach(), X2[val_idx].clone().detach()
-    y_train, y_val = y[train_idx], torch.tensor(y[val_idx], dtype=torch.float32)
-    y_train = torch.tensor(np.array(np.eye(2)[y_train.astype(int)]), dtype=torch.float32)
-
-
-    # Convert to PyTorch DataLoader
-    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
-    val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
-
-    # Training loop for this fold
-    for epoch in tqdm(range(num_epochs)):  # num_epochs is a variable you should define
-        total_loss = 0
-        avg_loss = 0
-        for batch_idx, (feature, label) in enumerate(train_loader):
-            feature, label = feature.to(device), label.to(device)
-            optimizer.zero_grad()
-            output = model(feature)
-            loss = criterion(output, label)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        avg_loss = total_loss / len(train_loader.dataset)
-        results_dict[model_name]["loss"].append(avg_loss)
-        test_accuracy, test_loss = test_acc_loss(model, val_loader, criterion, device)
-        results_dict[model_name]["test_acc"].append(test_accuracy)
-        results_dict[model_name]["test_loss"].append(test_loss)
-    # Training done
-    # Calculate the precision, recall and f1 score of this model
-    true_labels = y_val.numpy()
-    predictions = model(X_val)
-    predicted_labels = np.argmax(predictions.detach().cpu().numpy(), axis = 1)
-    results_dict[model_name]["precision"] = precision_score(true_labels, predicted_labels, average='macro')  # Use 'micro', 'macro', 'weighted', or 'samples' for multi-class
-    results_dict[model_name]["recall"] = recall_score(true_labels, predicted_labels, average='macro')
-    results_dict[model_name]["F1_score"] = f1_score(true_labels, predicted_labels, average='macro')
-    #torch.save(model, f"RESULTS/HybridModels_k_fold_cross_val/{model_name}.pt")
-    models[model_name] = model
-
-# Save the results_dict
-results_file_path = 'RESULTS/HybridModel_TL_based_k_fold_cross_val_2/hybridModel2_transfer_learning_k-fold_cross_val_results_dictionary.pkl'
-saveResults(results_dict, results_file_path)
-
+#%%
 #----------------------------------------------------------------------------------------------------
 # Model 3
 hm_3 = cm_3
@@ -428,78 +358,9 @@ hm_3 = nn.Sequential(hm_3.conv1,
                      hm_3.maxpool4,
                      Flatten())
 
-dqn3 = DressedQuantumNet(128*3*3)
-
-
-criterion = torch.nn.CrossEntropyLoss()  # For classification tasks, adjust accordingly
-num_epochs = 50
-
-# Convert your features and labels to PyTorch tensors
-X3 = hm_3(torch.tensor(X, dtype=torch.float32))
-y = Y_bin
-kf = KFold(n_splits=6, shuffle=True, random_state=42)
-results_dict = {}
-models = {}
-
-# Define a device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X3)):
-    print(f"Fold {fold+1}")
-
-    # Instantiating the hybrid model
-    #model = build_hybrid_model(classical_model_path, DressedQuantumNet, device)
-    model = DressedQuantumNet(128*3*3)
-    model_name = f"HybridModel3_transferLearning_based_{fold+1}"
-    models[model_name] = None
-    results_dict[model_name] = {"loss": [], "test_acc": [], "test_loss":[], "precision": 0, "recall": 0, "F1_score": 0}
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-    # Split the data into training and validation sets for this fold
-    X_train, X_val = X3[train_idx].clone().detach(), X3[val_idx].clone().detach()
-    y_train, y_val = y[train_idx], torch.tensor(y[val_idx], dtype=torch.float32)
-    y_train = torch.tensor(np.array(np.eye(2)[y_train.astype(int)]), dtype=torch.float32)
-
-
-    # Convert to PyTorch DataLoader
-    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
-    val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
-
-    # Training loop for this fold
-    for epoch in tqdm(range(num_epochs)):  # num_epochs is a variable you should define
-        total_loss = 0
-        avg_loss = 0
-        for batch_idx, (feature, label) in enumerate(train_loader):
-            feature, label = feature.to(device), label.to(device)
-            optimizer.zero_grad()
-            output = model(feature)
-            loss = criterion(output, label)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        avg_loss = total_loss / len(train_loader.dataset)
-        results_dict[model_name]["loss"].append(avg_loss)
-        test_accuracy, test_loss = test_acc_loss(model, val_loader, criterion, device)
-        results_dict[model_name]["test_acc"].append(test_accuracy)
-        results_dict[model_name]["test_loss"].append(test_loss)
-    # Training done
-    # Calculate the precision, recall and f1 score of this model
-    true_labels = y_val.numpy()
-    predictions = model(X_val)
-    predicted_labels = np.argmax(predictions.detach().cpu().numpy(), axis = 1)
-    results_dict[model_name]["precision"] = precision_score(true_labels, predicted_labels, average='macro')  # Use 'micro', 'macro', 'weighted', or 'samples' for multi-class
-    results_dict[model_name]["recall"] = recall_score(true_labels, predicted_labels, average='macro')
-    results_dict[model_name]["F1_score"] = f1_score(true_labels, predicted_labels, average='macro')
-    #torch.save(model, f"RESULTS/HybridModels_k_fold_cross_val/{model_name}.pt")
-    models[model_name] = model
-
-# Save the results_dict
-results_file_path = 'RESULTS/HybridModel_TL_based_k_fold_cross_val_2/hybridModel3_transfer_learning_k-fold_cross_val_results_dictionary.pkl'
-saveResults(results_dict, results_file_path)
-
+#%%
 #-----------------------------------------------------------------------------------------------
-# Model 4
+# Model 4 (M-1 according to the paper)
 
 hm_4 = cm_4
 for param in hm_4.parameters():
@@ -518,77 +379,13 @@ hm_4 = nn.Sequential(hm_4.conv1,
                      nn.ReLU(),
                      hm_4.maxpool4,
                      Flatten())
-
-dqn4 = DressedQuantumNet(128*5*5)
-
-
-criterion = torch.nn.CrossEntropyLoss()  # For classification tasks, adjust accordingly
-num_epochs = 50
-
-# Convert your features and labels to PyTorch tensors
-X4 = hm_4(torch.tensor(X, dtype=torch.float32))
+#%%
+X4 = torch.concat((hm_4(torch.tensor(X[:1000],dtype=torch.float32)),
+                  hm_4(torch.tensor(X[1000:2000],dtype=torch.float32)),
+                  hm_4(torch.tensor(X[2000:(X.shape[0]+1)], dtype=torch.float32))), dim=0)
 y = Y_bin
-kf = KFold(n_splits=6, shuffle=True, random_state=42)
-results_dict = {}
-models = {}
 
-# Define a device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X4)):
-    print(f"Fold {fold+1}")
-
-    # Instantiating the hybrid model
-    #model = build_hybrid_model(classical_model_path, DressedQuantumNet, device)
-    model = DressedQuantumNet(128*5*5)
-    model_name = f"HybridModel4_transferLearning_based_{fold+1}"
-    models[model_name] = None
-    results_dict[model_name] = {"loss": [], "test_acc": [], "test_loss":[], "precision": 0, "recall": 0, "F1_score": 0}
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-    # Split the data into training and validation sets for this fold
-    X_train, X_val = X4[train_idx].clone().detach(), X4[val_idx].clone().detach()
-    y_train, y_val = y[train_idx], torch.tensor(y[val_idx], dtype=torch.float32)
-    y_train = torch.tensor(np.array(np.eye(2)[y_train.astype(int)]), dtype=torch.float32)
-
-
-    # Convert to PyTorch DataLoader
-    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
-    val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
-
-    # Training loop for this fold
-    for epoch in tqdm(range(num_epochs)):  # num_epochs is a variable you should define
-        total_loss = 0
-        avg_loss = 0
-        for batch_idx, (feature, label) in enumerate(train_loader):
-            feature, label = feature.to(device), label.to(device)
-            optimizer.zero_grad()
-            output = model(feature)
-            loss = criterion(output, label)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        avg_loss = total_loss / len(train_loader.dataset)
-        results_dict[model_name]["loss"].append(avg_loss)
-        test_accuracy, test_loss = test_acc_loss(model, val_loader, criterion, device)
-        results_dict[model_name]["test_acc"].append(test_accuracy)
-        results_dict[model_name]["test_loss"].append(test_loss)
-    # Training done
-    # Calculate the precision, recall and f1 score of this model
-    true_labels = y_val.numpy()
-    predictions = model(X_val)
-    predicted_labels = np.argmax(predictions.detach().cpu().numpy(), axis = 1)
-    results_dict[model_name]["precision"] = precision_score(true_labels, predicted_labels, average='macro')  # Use 'micro', 'macro', 'weighted', or 'samples' for multi-class
-    results_dict[model_name]["recall"] = recall_score(true_labels, predicted_labels, average='macro')
-    results_dict[model_name]["F1_score"] = f1_score(true_labels, predicted_labels, average='macro')
-    #torch.save(model, f"RESULTS/HybridModels_k_fold_cross_val/{model_name}.pt")
-    models[model_name] = model
-
-# Save the results_dict
-results_file_path = 'RESULTS/HybridModel_TL_based_k_fold_cross_val_2/hybridModel4_transfer_learning_k-fold_cross_val_results_dictionary.pkl'
-saveResults(results_dict, results_file_path)
-
+k_fold_cross_val(X4, y, model_number=1, num_epochs = 50, n_splits = 6)
 
 #%%K-fold cross validate Quanvolution2D
 from Models import QConv2D, QConv2D_AE
