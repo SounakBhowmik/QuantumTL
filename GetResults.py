@@ -133,6 +133,19 @@ hybrid_model4_TL_results_file_path = "RESULTS/HybridModel_TL_based_k_fold_cross_
 with open(hybrid_model4_TL_results_file_path, 'rb') as f:
     hybrid_model4 = pickle.load(f)
 #%%
+#Classical Transfer learning equivalent models
+classical_model1_TL_results_file_path = "RESULTS/ClassicalModel_TL_based_k_fold_cross_val/classicalModel1_transfer_learning_k-fold_cross_val_results_dictionary.pkl"
+classical_model2_TL_results_file_path = "RESULTS/ClassicalModel_TL_based_k_fold_cross_val/classicalModel2_transfer_learning_k-fold_cross_val_results_dictionary.pkl"
+classical_model3_TL_results_file_path = "RESULTS/ClassicalModel_TL_based_k_fold_cross_val/classicalModel4_transfer_learning_k-fold_cross_val_results_dictionary.pkl"
+
+with open(classical_model1_TL_results_file_path, 'rb') as f:
+    cm1_res = pickle.load(f)
+with open(classical_model2_TL_results_file_path, 'rb') as f:
+    cm2_res = pickle.load(f)
+with open(classical_model3_TL_results_file_path, 'rb') as f:
+    cm3_res = pickle.load(f)
+
+#%%
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines

@@ -122,9 +122,9 @@ Y_bin = Y_poly
 Y_bin [Y_bin > 0] = 1
 
 # Normalize
-# X = X/255.0
+X = X/255.0
 # Standardize
-X = standardize_data(X)
+#X = standardize_data(X)
 
 #%% Testing Quanvolution
 
@@ -379,13 +379,13 @@ hm_4 = nn.Sequential(hm_4.conv1,
                      nn.ReLU(),
                      hm_4.maxpool4,
                      Flatten())
-#%%
+
 X4 = torch.concat((hm_4(torch.tensor(X[:1000],dtype=torch.float32)),
                   hm_4(torch.tensor(X[1000:2000],dtype=torch.float32)),
                   hm_4(torch.tensor(X[2000:(X.shape[0]+1)], dtype=torch.float32))), dim=0)
 y = Y_bin
 
-k_fold_cross_val(X4, y, model_number=1, num_epochs = 50, n_splits = 6)
+k_fold_cross_val(X4, y, model_number=4, num_epochs = 50, n_splits = 6)
 
 #%%K-fold cross validate Quanvolution2D
 from Models import QConv2D, QConv2D_AE
