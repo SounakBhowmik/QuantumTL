@@ -412,10 +412,67 @@ def quantum_circuit_1(n_qubits: int, params: torch.Tensor, n_layers: int): #2, 4
         for i in range(n_qubits-1):
             qml.CNOT(wires=[i+1, i])
 
+def quantum_circuit_16(n_qubits: int, params: torch.Tensor, n_layers: int):
+    for l in range(n_layers):
+        # Apply RX and RZ gates to each qubit
+        for i in range(n_qubits):
+            qml.RX(params[l][i, 0], wires=i)
+            qml.RZ(params[l][i, 1], wires=i)
+        
+        # Apply CRZ gates
+        for i in range(n_qubits-1):
+            qml.CRZ(phi=params[l][i, 2], wires = [i+1, i])
+
+def quantum_circuit_14(n_qubits: int, params: torch.Tensor, n_layers: int):
+    for l in range(n_layers):
+        # Apply Ry gates
+        for i in range(n_qubits):
+            qml.RY(params[l][i, 0], wires=i)
+        
+        # Apply CRX gates
+        for i in range(n_qubits):
+            w = (i+1) if (i+1<n_qubits) else i+1-n_qubits
+            qml.CRX(phi=params[l][i, 1], wires=[i, w])
+        
+        # Apply Ry gates
+        for l in range(n_layers):
+            # Apply Ry gates
+            for i in range(n_qubits):
+                qml.RY(params[l][i, 2], wires=i)
+        
+        # Apply CRX gates
+        for i in range(n_qubits):
+            w = (i+1) if (i+1<n_qubits) else i+1-n_qubits
+            qml.CRX(phi=params[l][i, 1], wires=[w, i])
+            
+
+def quantum_circuit_11(n_qubits: int, params: torch.Tensor, n_layers: int):
+    for l in range(n_layers):
+        # Apply RY and RZ gates
+        for i in range(n_qubits):
+            qml.RY(params[l][i, 0], wires=i)  
+            qml.RZ(params[l][i, 1], wires=i)
+        # Apply C-NOTs
+            for i in range(0, n_qubits-1, 2):
+                qml.CONT(wires=[i+1, i])
+        
+        # Apply RY and RZ gates
+        for i in range(1, n_qubits-1):
+            qml.RY(params[l][i, 2], wires=i)  
+            qml.RZ(params[l][i, 3], wires=i)
+        # Apply C-NOTs
+            for i in range(1, n_qubits-1, 2):
+                qml.CONT(wires=[i+1, i])
+        
+
+            
 
 
 QUANTUM_CIRCUITS_DICT = [{"id":0, "circuit":quantum_circuit_default, "weight_shape":[None, None, 3]}, 
-                         {"id":1, "circuit":quantum_circuit_1, "weight_shape":[None, None, 2]}]
+                         {"id":1, "circuit":quantum_circuit_1, "weight_shape":[None, None, 2]},
+                         {"id":16, "circuit":quantum_circuit_16, "weight_shape":[None, None, 3]},
+                         {"id":14, "circuit":quantum_circuit_14, "weight_shape":[None, None, 4]},
+                         {"id":11, "circuit":quantum_circuit_11, "weight_shape":[None, None, 4]}]
 
 ##################################################################################################################
 #%% Full-fledged quanvolution

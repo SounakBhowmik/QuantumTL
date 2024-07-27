@@ -93,7 +93,6 @@ X = X/255.0
 #%%K-fold cross validate Quanvolution2D
 from Models import QConv2D #, QConv2D_AE
 
-results_dir = "HybridModel_Quanvolution_AE_k_fold_cross_val"
 
 class ConvModel_1(nn.Module):
     def __init__(self):
@@ -144,12 +143,12 @@ class ConvModel_1(nn.Module):
 class Hybrid_QuanvModel_1(nn.Module):
     def __init__(self):
         super(Hybrid_QuanvModel_1, self).__init__()
-        self.name = "Hybrid_QuanvModel_circuit_1"
+        self.name = "Hybrid_QuanvModel_circuit_14"
         # Input shape: -1, 1, 200, 200
         self.conv1 = nn.Conv2d(1, 1, kernel_size=8, stride = 2)                      # -1, 1, 97, 97
         self.maxpool1 = nn.MaxPool2d(kernel_size=4, stride=2)                        # -1, 1, 47, 47
 
-        self.q_conv = QConv2D(in_channels=1, kernel_size=2, n_layers=2, stride=2)                    # -1, 4, 23,23
+        self.q_conv = QConv2D(in_channels=1, kernel_size=2, n_layers=1, stride=2, ckt_id=14)                    # -1, 4, 23,23
 
         self.conv2 = nn.Conv2d(4, 16, kernel_size=4, stride = 1)                    # -1, 16, 20, 20
         self.maxpool2 = nn.MaxPool2d(kernel_size=4, stride=1)                        # -1, 16, 17, 17
@@ -184,7 +183,7 @@ class Hybrid_QuanvModel_1(nn.Module):
         return x
 
 
-#%%
+#%% Initialize the hyperparameters and other training specs
 
 
 ##########
@@ -197,8 +196,7 @@ Y_class_indices = torch.argmax(Y, dim=1)
 
 # Hyperparameters
 batch_size = 32
-learning_rate = 0.001
-num_epochs = 1
+num_epochs = 50
 validation_split = 0.2
 
 # Create DataLoader
@@ -210,10 +208,16 @@ train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
+#%%
+learning_rate = 0.001
+
 # Initialize model, loss function, and optimizer
 model = Hybrid_QuanvModel_1()
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+#Create the learning rate scheduler
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
 # Dictionary to record performance metrics
 performance = {
@@ -237,6 +241,8 @@ for epoch in tqdm(range(num_epochs)):
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
+    
+    scheduler.step()
 
     # Validation phase
     model.eval()
@@ -280,7 +286,7 @@ performance['f1_score'] = f1
 print(f'Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}')
 
 # Save performance metrics to a file
-with open('RESULTS/test_different_VQC_designs/ckt_1_performance_metrics.pkl', 'wb') as f:
+with open('RESULTS/test_different_VQC_designs/ckt_14_performance_metrics.pkl', 'wb') as f:
     pickle.dump(performance, f)
 
 
