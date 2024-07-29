@@ -141,14 +141,14 @@ class ConvModel_1(nn.Module):
 
 # Building the model
 class Hybrid_QuanvModel_1(nn.Module):
-    def __init__(self):
+    def __init__(self, VQC_ckt_id):
         super(Hybrid_QuanvModel_1, self).__init__()
-        self.name = "Hybrid_QuanvModel_circuit_14"
+        self.name = "Hybrid_QuanvModel_circuit_"+VQC_ckt_id
         # Input shape: -1, 1, 200, 200
         self.conv1 = nn.Conv2d(1, 1, kernel_size=8, stride = 2)                      # -1, 1, 97, 97
         self.maxpool1 = nn.MaxPool2d(kernel_size=4, stride=2)                        # -1, 1, 47, 47
 
-        self.q_conv = QConv2D(in_channels=1, kernel_size=2, n_layers=1, stride=2, ckt_id=14)                    # -1, 4, 23,23
+        self.q_conv = QConv2D(in_channels=1, kernel_size=2, n_layers=1, stride=2, ckt_id = VQC_ckt_id)                    # -1, 4, 23,23
 
         self.conv2 = nn.Conv2d(4, 16, kernel_size=4, stride = 1)                    # -1, 16, 20, 20
         self.maxpool2 = nn.MaxPool2d(kernel_size=4, stride=1)                        # -1, 16, 17, 17
@@ -212,81 +212,84 @@ val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 learning_rate = 0.001
 
 # Initialize model, loss function, and optimizer
-model = Hybrid_QuanvModel_1()
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+VQC_ckt_id = [14,9,6]
 
-#Create the learning rate scheduler
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-
-# Dictionary to record performance metrics
-performance = {
-    'train_loss': [],
-    'val_loss': [],
-    'val_accuracy': [],
-    'precision': None,
-    'recall': None,
-    'f1_score': None
-}
-
-# Training and validation loop
-for epoch in tqdm(range(num_epochs)):
-    # Training phase
-    model.train()
-    train_loss = 0.0
-    for batch_X, batch_Y in train_loader:
-        optimizer.zero_grad()
-        outputs = model(batch_X)
-        loss = criterion(outputs, batch_Y)
-        loss.backward()
-        optimizer.step()
-        train_loss += loss.item()
+for ckt_id in VQC_ckt_id:
+    model = Hybrid_QuanvModel_1()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
-    scheduler.step()
-
-    # Validation phase
-    model.eval()
-    val_loss = 0.0
-    correct = 0
-    total = 0
+    #Create the learning rate scheduler
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
+    
+    # Dictionary to record performance metrics
+    performance = {
+        'train_loss': [],
+        'val_loss': [],
+        'val_accuracy': [],
+        'precision': None,
+        'recall': None,
+        'f1_score': None
+    }
+    
+    # Training and validation loop
+    for epoch in tqdm(range(num_epochs)):
+        # Training phase
+        model.train()
+        train_loss = 0.0
+        for batch_X, batch_Y in train_loader:
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_Y)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+        
+        #scheduler.step()
+    
+        # Validation phase
+        model.eval()
+        val_loss = 0.0
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch_X, batch_Y in val_loader:
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_Y)
+                val_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                total += batch_Y.size(0)
+                correct += (predicted == batch_Y).sum().item()
+        
+        val_accuracy = correct / total
+        performance['train_loss'].append(train_loss / len(train_loader))
+        performance['val_loss'].append(val_loss / len(val_loader))
+        performance['val_accuracy'].append(val_accuracy)
+        print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss/len(train_loader):.4f}, '
+              f'Val Loss: {val_loss/len(val_loader):.4f}, Val Accuracy: {val_accuracy:.4f}')
+    
+    # Calculate precision, recall, and F1 score
+    all_preds = []
+    all_labels = []
     with torch.no_grad():
         for batch_X, batch_Y in val_loader:
             outputs = model(batch_X)
-            loss = criterion(outputs, batch_Y)
-            val_loss += loss.item()
             _, predicted = torch.max(outputs.data, 1)
-            total += batch_Y.size(0)
-            correct += (predicted == batch_Y).sum().item()
+            all_preds.extend(predicted.numpy())
+            all_labels.extend(batch_Y.numpy())
     
-    val_accuracy = correct / total
-    performance['train_loss'].append(train_loss / len(train_loader))
-    performance['val_loss'].append(val_loss / len(val_loader))
-    performance['val_accuracy'].append(val_accuracy)
-    print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss/len(train_loader):.4f}, '
-          f'Val Loss: {val_loss/len(val_loader):.4f}, Val Accuracy: {val_accuracy:.4f}')
-
-# Calculate precision, recall, and F1 score
-all_preds = []
-all_labels = []
-with torch.no_grad():
-    for batch_X, batch_Y in val_loader:
-        outputs = model(batch_X)
-        _, predicted = torch.max(outputs.data, 1)
-        all_preds.extend(predicted.numpy())
-        all_labels.extend(batch_Y.numpy())
-
-precision = precision_score(all_labels, all_preds)
-recall = recall_score(all_labels, all_preds)
-f1 = f1_score(all_labels, all_preds)
-
-performance['precision'] = precision
-performance['recall'] = recall
-performance['f1_score'] = f1
-
-print(f'Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}')
-
-# Save performance metrics to a file
-with open('RESULTS/test_different_VQC_designs/ckt_14_performance_metrics.pkl', 'wb') as f:
-    pickle.dump(performance, f)
+    precision = precision_score(all_labels, all_preds)
+    recall = recall_score(all_labels, all_preds)
+    f1 = f1_score(all_labels, all_preds)
+    
+    performance['precision'] = precision
+    performance['recall'] = recall
+    performance['f1_score'] = f1
+    
+    print(f'Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}')
+    
+    # Save performance metrics to a file
+    with open(f'RESULTS/test_different_VQC_designs/ckt_{ckt_id}_performance_metrics.pkl', 'wb') as f:
+        pickle.dump(performance, f)
 
 

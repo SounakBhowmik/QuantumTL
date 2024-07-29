@@ -452,30 +452,78 @@ def quantum_circuit_11(n_qubits: int, params: torch.Tensor, n_layers: int):
         for i in range(n_qubits):
             qml.RY(params[l][i, 0], wires=i)  
             qml.RZ(params[l][i, 1], wires=i)
+        
         # Apply C-NOTs
-            for i in range(0, n_qubits-1, 2):
-                qml.CONT(wires=[i+1, i])
+        for i in range(0, n_qubits-1, 2):
+            qml.CNOT(wires=[i+1, i])
         
         # Apply RY and RZ gates
         for i in range(1, n_qubits-1):
             qml.RY(params[l][i, 2], wires=i)  
             qml.RZ(params[l][i, 3], wires=i)
         # Apply C-NOTs
-            for i in range(1, n_qubits-1, 2):
-                qml.CONT(wires=[i+1, i])
+        for i in range(1, n_qubits-1, 2):
+            qml.CNOT(wires=[i+1, i])
         
+        #return [qml.expval(qml.PauliZ(wires=i)) for i in range(n_qubits)]
 
-            
+def quantum_circuit_9(n_qubits: int, params: torch.Tensor, n_layers: int):      
+    for l in range(n_layers):
+        #Apply Rxz gates
+        for i in range(n_qubits):
+            qml.RX(phi=params[l][i,0], wires=i)
+            qml.RZ(phi=params[l][i,1], wires=i)
+        
+        #Apply CRX gates
+        for i in range(n_qubits):
+            for j in range(n_qubits):
+                if(i!=j):
+                    qml.CRX(phi=params[l][i, i+2], wires=[i, j])
+        #Apply Rxz gates
+        for i in range(n_qubits):
+            qml.RX(phi=params[l][i,n_qubits+2], wires=i)
+            qml.RZ(phi=params[l][i,n_qubits+3], wires=i)
+    #return [qml.expval(qml.PauliZ(wires=i)) for i in range(n_qubits)]
+
+def quantum_circuit_6(n_qubits: int, params: torch.Tensor, n_layers: int):      
+    for l in range(n_layers):
+        #Apply H
+        for i in range(n_qubits):
+            qml.Hadamard(wires=i)
+        for i in range(n_qubits-1):
+            qml.CZ(wires=[i,i+1])
+        for i in range(n_qubits):
+            qml.RX(phi=params[l][i,0], wires=i)
+    #return [qml.expval(qml.PauliZ(wires=i)) for i in range(n_qubits)]        
+
+def quantum_circuits_weightshape(ckt_id, n_qubits):
+    if(ckt_id == 9):
+        return [None, None, n_qubits+4]
+    if(ckt_id == 0):
+        return [None, None, 3]
+    if(ckt_id == 1):
+        return [None, None, 2]
+    if(ckt_id == 16):
+        return [None, None, 3]
+    if(ckt_id == 14):
+        return [None, None, 4]
+    if(ckt_id == 11):
+        return [None, None, 4]
+    if(ckt_id == 6):
+        return [None, None, 1]
+    
 
 
 QUANTUM_CIRCUITS_DICT = [{"id":0, "circuit":quantum_circuit_default, "weight_shape":[None, None, 3]}, 
                          {"id":1, "circuit":quantum_circuit_1, "weight_shape":[None, None, 2]},
                          {"id":16, "circuit":quantum_circuit_16, "weight_shape":[None, None, 3]},
                          {"id":14, "circuit":quantum_circuit_14, "weight_shape":[None, None, 4]},
-                         {"id":11, "circuit":quantum_circuit_11, "weight_shape":[None, None, 4]}]
+                         {"id":11, "circuit":quantum_circuit_11, "weight_shape":[None, None, 4]},
+                         {"id":9, "circuit":quantum_circuit_9, "weight_shape":None},
+                         {"id":6, "circuit":quantum_circuit_6, "weight_shape":[None, None, 1]}]
 
 ##################################################################################################################
-#%% Full-fledged quanvolution
+#%% Full-fledged quanvolution angle embedding
 class QConv2D(nn.Module):
     def __init__(self,  in_channels: int, kernel_size: int, n_layers: int, stride: int, device=None, ckt_id=1, dtype=None)->None:
         super(QConv2D, self).__init__()
@@ -490,7 +538,7 @@ class QConv2D(nn.Module):
         for item in QUANTUM_CIRCUITS_DICT:
             if(item["id"] == ckt_id):
                 self.vqc = item["circuit"]
-                self.weight_shape = item["weight_shape"]
+                self.weight_shape = quantum_circuits_weightshape(ckt_id, self.n_qubits) if item["weight_shape"] is None else item["weight_shape"]
                 break
                 
         self.weight_shape[0] = self.n_layers
