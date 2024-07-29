@@ -143,7 +143,7 @@ class ConvModel_1(nn.Module):
 class Hybrid_QuanvModel_1(nn.Module):
     def __init__(self, VQC_ckt_id):
         super(Hybrid_QuanvModel_1, self).__init__()
-        self.name = "Hybrid_QuanvModel_circuit_"+VQC_ckt_id
+        self.name = f'Hybrid_QuanvModel_circuit_{VQC_ckt_id}'
         # Input shape: -1, 1, 200, 200
         self.conv1 = nn.Conv2d(1, 1, kernel_size=8, stride = 2)                      # -1, 1, 97, 97
         self.maxpool1 = nn.MaxPool2d(kernel_size=4, stride=2)                        # -1, 1, 47, 47
@@ -215,7 +215,8 @@ learning_rate = 0.001
 VQC_ckt_id = [14,9,6]
 
 for ckt_id in VQC_ckt_id:
-    model = Hybrid_QuanvModel_1()
+    print(f'>>>>>>>>>>>>>>>>>>>>>> Running for design number {ckt_id} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+    model = Hybrid_QuanvModel_1(ckt_id)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
